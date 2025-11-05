@@ -1,0 +1,542 @@
+# Painter class - Wrapper for PyCairo library
+# MIT License
+
+# Copyright (c) 2022 CS Goh
+
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+import cairo
+import os
+import sys
+from pathlib import Path
+from typing import Dict, Optional
+import ctypes
+import ctypes.util
+from colour import Color
+from roadmapper.colourpalette import ColourTheme
+
+
+class Painter:
+    """A wrapper class for PyCairo library"""
+
+    width = 0
+    height = 0
+    last_drawn_y_pos = 0
+
+    left_margin = 30
+    right_margin = 30
+    group_box_width_percentage = 0.2
+    timeline_width_percentage = 1 - group_box_width_percentage
+    gap_between_group_box_and_timeline = 20
+    gap_between_timeline_and_title = 20
+
+    timeline_height = 20
+
+    # Colour scheme
+    title_font: str
+    title_font_size: int
+    title_font_colour: str
+
+    timeline_font: str
+    timeline_font_size: int
+    timeline_font_colour: str
+    timeline_fill_colour: str
+
+    marker_font: str
+    marker_font_size: int
+    marker_font_colour: str
+    marker_line_colour: str
+
+    group_font: str
+    group_font_size: int
+    group_font_colour: str
+    group_fill_colour: str
+
+    task_font: str
+    task_font_size: int
+    task_font_colour: str
+    task_fill_colour: str
+
+    milestone_font: str
+    milestone_font_size: int
+    milestone_font_colour: str
+    milestone_fill_colour: str
+
+    footer_font: str
+    footer_font_size: int
+    footer_font_colour: str
+
+    # initialise code
+    def __init__(self, width: int, height: int):
+        """__init__ method
+
+        Args:
+            width (int): Width of the surface
+            height (int): Height of the surface
+        """
+        self.width = width
+        self.height = height
+        self.last_drawn_y_pos = 0
+
+        # Default file format
+        self.output_type = "PNG"
+
+        if self.output_type == "PNG":
+            self.__surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, width, height)
+
+        # Future Implementation
+        # if output_type == "PDF":
+        #     self.__surface = cairo.PDFSurface(output_file_name, width, height)
+
+        self.__cr = cairo.Context(self.__surface)
+        self._registered_fonts: Dict[str, str] = {}
+
+    def set_colour_palette(self, colour_palette: str) -> None:
+        """Set colour palette
+
+        Args:
+            colour_palette (str): Name of the colour palette. Eg. OrangePeel
+        """
+        colour_theme = ColourTheme(colour_palette)
+        self.background_colour = colour_theme.get_colour_theme_settings("background")
+        (
+            self.title_font,
+            self.title_font_size,
+            self.title_font_colour,
+        ) = colour_theme.get_colour_theme_settings("title")
+        (
+            self.timeline_font,
+            self.timeline_font_size,
+            self.timeline_font_colour,
+            self.timeline_fill_colour,
+        ) = colour_theme.get_colour_theme_settings("timeline")
+        (
+            self.marker_font,
+            self.marker_font_size,
+            self.marker_font_colour,
+            self.marker_line_colour,
+        ) = colour_theme.get_colour_theme_settings("marker")
+        (
+            self.group_font,
+            self.group_font_size,
+            self.group_font_colour,
+            self.group_fill_colour,
+        ) = colour_theme.get_colour_theme_settings("group")
+        (
+            self.task_font,
+            self.task_font_size,
+            self.task_font_colour,
+            self.task_fill_colour,
+        ) = colour_theme.get_colour_theme_settings("task")
+        (
+            self.milestone_font,
+            self.milestone_font_size,
+            self.milestone_font_colour,
+            self.milestone_fill_colour,
+        ) = colour_theme.get_colour_theme_settings("milestone")
+        (
+            self.footer_font,
+            self.footer_font_size,
+            self.footer_font_colour,
+        ) = colour_theme.get_colour_theme_settings("footer")
+
+    def set_colour(self, colour: str) -> None:
+        """Set colour
+
+        Args:
+            colour (str): HTML color code. Eg. #FFFFFF or LightGreen
+        """
+        c = Color(colour)
+        self.__cr.set_source_rgb(*c.get_rgb())
+
+    def set_colour_alpha(self, colour: str) -> None:
+        """Set colour with alpha
+
+        Args:
+            colour (str): HTML colour name or hex code. Eg. #FFFFFF or LightGreen
+        """
+        c = Color(colour)
+        self.__cr.set_source_rgba(*c.get_rgb(), 0.7)
+
+    def set_font(self, font: str, font_size: int, font_colour: str) -> None:
+        """Configure text font settings
+
+        Args:
+            font (str): Font name. Eg. Arial
+            font_size (int): Font size
+            font_colour (str): Font colour in HTML colour name or hex code. Eg. #FFFFFF or LightGreen
+        """
+        self.__cr.select_font_face(font)
+        self.__cr.set_font_size(font_size)
+        self.set_colour(font_colour)
+
+    def draw_box(self, x: int, y: int, width: int, height: int) -> None:
+        """Draw a rectagle
+
+        Args:
+            x (int): X coordinate
+            y (int): Y coordinate
+            width (int): Rectangle width
+            height (int): Rectangle height
+        """
+        self.__cr.rectangle(x, y, width, height)
+        self.__cr.fill()
+
+    def draw_box_with_text(
+        self,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        text: str,
+        text_alignment: str,
+        font_colour: str,
+        fill_colour: str,
+    ) -> None:
+        """Draw a box with text
+
+        Args:
+            x (int): X coordinate
+            y (int): Y coordinate
+            width (int): Rectangle width
+            height (int): Rectangle height
+            text (str): Text to display in the box
+            text_alignment (str): Text alignment. Eg. left, center, right
+            font_colour (str): Text font colour in HTML colour name or hex code. Eg. #FFFFFF or LightGreen
+            fill_colour (str): Box fill colour in HTML colour name or hex code. Eg. #FFFFFF or LightGreen
+        """
+        self.set_colour(fill_colour)
+        self.__cr.rectangle(x, y, width, height)
+        self.__cr.fill()
+        self.set_colour(font_colour)
+        text_x, text_y = self.get_display_text_position(
+            x, y, width, height, text, text_alignment
+        )
+        self.draw_text(text_x, text_y, text)
+
+    def draw_diamond(self, x: int, y: int, width: int, height: int) -> None:
+        """Draw a diamond
+
+        Args:
+            x (int): X coordinate
+            y (int): Y coordinate
+            width (int): Diamond width
+            height (int): Diamond height
+        """
+        # self.__cr.set_source_rgb(1, 0, 0)
+        self.__cr.move_to(x + width / 2, y)
+        self.__cr.line_to(x + width, y + height / 2)
+        self.__cr.line_to(x + width / 2, y + height)
+        self.__cr.line_to(x, y + height / 2)
+        self.__cr.close_path()
+        self.__cr.fill()
+
+    def draw_text(self, x: int, y: int, text: str) -> None:
+        """Draw text
+
+        Args:
+            x (int): X coordinate
+            y (int): Y coordinate
+            text (str): Text to draw/display
+        """
+        self.__cr.move_to(x, y)
+        self.__cr.show_text(text)
+
+    def draw_image(
+        self, image_path: str, x: float, y: float, width: float = 0, height: float = 0
+    ) -> None:
+        """Draw an image surface loaded from disk.
+
+        Args:
+            image_path (str): Path to a PNG image file.
+            x (float): X coordinate where the image should be drawn.
+            y (float): Y coordinate where the image should be drawn.
+            width (float, optional): Target width. Defaults to source width.
+            height (float, optional): Target height. Defaults to source height.
+        """
+        image_surface = cairo.ImageSurface.create_from_png(image_path)
+        source_width = image_surface.get_width()
+        source_height = image_surface.get_height()
+        target_width = width or source_width
+        target_height = height or source_height
+
+        if source_width == 0 or source_height == 0:
+            return
+
+        scale_x = target_width / source_width
+        scale_y = target_height / source_height
+
+        self.__cr.save()
+        self.__cr.translate(x, y)
+        self.__cr.scale(scale_x, scale_y)
+        self.__cr.set_source_surface(image_surface, 0, 0)
+        self.__cr.paint()
+        self.__cr.restore()
+
+    def set_line_width(self, width: int) -> None:
+        """Set line width
+
+        Args:
+            width (int): Line width
+        """
+
+        self.__cr.set_line_width(width)
+
+    def set_line_style(self, style: str = "solid") -> None:
+        """Set line style
+
+        Args:
+            style (str, optional): Line style. Defaults to "solid". Options: "solid", "dashed"
+        """
+        if style == "solid":
+            dash = [10.0, 0]
+        elif style == "dashed":
+            dash = [10.0, 5.0]
+        else:
+            dash = [10.0, 0]
+        self.__cr.set_dash(dash)
+
+    def draw_line(self, x1: int, y1: int, x2: int, y2: int) -> None:
+        """Draw a line
+
+        Args:
+            x1 (int): Line begin X coordinate
+            y1 (int): Line begin Y coordinate
+            x2 (int): Line end X coordinate
+            y2 (int): Line end Y coordinate
+        """
+        self.__cr.move_to(x1, y1)
+        self.__cr.line_to(x2, y2)
+        self.__cr.stroke()
+
+    def get_text_dimension(self, text: str) -> tuple:
+        """Get text dimension
+
+        Args:
+            text (str): Text that is used to calculate dimension
+
+        Returns:
+            (text_width (int), text_height (int)): Text dimension (width, height)
+        """
+        (
+            _,
+            _,
+            text_width,
+            text_height,
+            _,
+            _,
+        ) = self.__cr.text_extents(text)
+        return text_width, text_height
+
+    def set_background_colour(self) -> None:
+        """Set surface background colour
+
+        Args:
+            colour (str): Background colour in HTML colour name or hex code. Eg. #FFFFFF or LightGreen
+        """
+        self.set_colour(self.background_colour)
+        self.__cr.paint()
+
+    def get_display_text_position(
+        self, x: int, y: int, width: int, height: int, text: str, alignment: str
+    ) -> tuple:
+        """Get text position relative to the rectangle box
+
+        Args:
+            x (int): Rectangle X coordinate
+            y (int): Rectangle Y coordinate
+            width (int): Rectangle width
+            height (int): Rectangle height
+            text (str): Text used to calculate position
+            alignment (str): Text alignment. Eg. left, center, right
+
+        Returns:
+            (text_x (int), text_y (int)): Text x and y coordinates
+        """
+        text_width, text_height = self.get_text_dimension(text)
+
+        if alignment == "centre":
+            text_x_pos = (width / 2) - (text_width / 2)
+        elif alignment == "right":
+            text_x_pos = width - text_width - 5
+        elif alignment == "left":
+            text_x_pos = 0 + 5
+
+        text_y_pos = (height / 2) + (text_height / 2)
+
+        return x + text_x_pos, y + text_y_pos
+
+    def _register_font(self, font_name: str, font_path: str) -> None:
+        if not font_name or not font_path:
+            return
+        path_obj = Path(font_path)
+        if not path_obj.exists():
+            raise FileNotFoundError(f"Font file '{path_obj}' was not found.")
+        path = str(path_obj.resolve())
+        if font_name in self._registered_fonts:
+            if self._registered_fonts[font_name] == path:
+                return
+        try:
+            self._register_font_with_platform(path)
+        except Exception:
+            # Fallback: try fontconfig registration if possible
+            try:
+                self._register_font_fontconfig(path)
+            except Exception as exc2:  # pragma: no cover - platform specifics
+                raise RuntimeError(f"Failed to register font '{font_name}': {exc2}")
+        self._registered_fonts[font_name] = path
+
+    def _register_font_with_platform(self, path: str) -> None:
+        if sys.platform == "darwin":
+            try:
+                self._register_font_fontconfig(path)
+            except Exception:
+                self._register_font_macos(path)
+        elif sys.platform.startswith("linux"):
+            self._register_font_fontconfig(path)
+        else:  # pragma: no cover - unsupported platforms
+            pass
+
+    def _register_font_macos(self, path: str) -> None:
+        core_text_path = ctypes.util.find_library("CoreText")
+        core_foundation_path = ctypes.util.find_library("CoreFoundation")
+        if not core_text_path or not core_foundation_path:
+            raise RuntimeError("CoreText/CoreFoundation libraries not found.")
+        ct = ctypes.CDLL(core_text_path)
+        cf = ctypes.CDLL(core_foundation_path)
+
+        CFURLCreateFromFileSystemRepresentation = cf.CFURLCreateFromFileSystemRepresentation
+        CFURLCreateFromFileSystemRepresentation.restype = ctypes.c_void_p
+        CFURLCreateFromFileSystemRepresentation.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+            ctypes.c_long,
+            ctypes.c_bool,
+        ]
+
+        url_ref = CFURLCreateFromFileSystemRepresentation(
+            ctypes.c_void_p(0), path.encode("utf-8"), len(path), False
+        )
+        if not url_ref:
+            raise RuntimeError("Unable to create CFURL for font path.")
+
+        CTFontManagerRegisterFontsForURL = ct.CTFontManagerRegisterFontsForURL
+        CTFontManagerRegisterFontsForURL.restype = ctypes.c_bool
+        CTFontManagerRegisterFontsForURL.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_void_p,
+        ]
+        scope_user = 2  # kCTFontManagerScopeUser
+        success = CTFontManagerRegisterFontsForURL(url_ref, scope_user, ctypes.c_void_p(0))
+
+        CFRelease = cf.CFRelease
+        CFRelease.argtypes = [ctypes.c_void_p]
+        CFRelease(url_ref)
+
+        if not success:
+            raise RuntimeError("CoreText rejected font registration.")
+
+    def _register_font_fontconfig(self, path: str) -> None:
+        cache_root = Path.cwd() / ".cache"
+        fontconfig_cache = cache_root / "fontconfig"
+        try:
+            fontconfig_cache.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        os.environ.setdefault("XDG_CACHE_HOME", str(cache_root))
+
+        fontconfig_path = ctypes.util.find_library("fontconfig")
+        if not fontconfig_path:
+            for candidate in (
+                "/opt/homebrew/lib/libfontconfig.dylib",
+                "/usr/local/lib/libfontconfig.dylib",
+                "/opt/local/lib/libfontconfig.dylib",
+            ):
+                if Path(candidate).exists():
+                    fontconfig_path = candidate
+                    break
+        if not fontconfig_path:
+            raise RuntimeError("fontconfig library not found.")
+        fc = ctypes.CDLL(fontconfig_path)
+
+        FcInitLoadConfigAndFonts = fc.FcInitLoadConfigAndFonts
+        FcInitLoadConfigAndFonts.restype = ctypes.c_void_p
+        config = FcInitLoadConfigAndFonts()
+        if not config:
+            raise RuntimeError("FcInitLoadConfigAndFonts failed.")
+
+        FcConfigAppFontAddFile = fc.FcConfigAppFontAddFile
+        FcConfigAppFontAddFile.restype = ctypes.c_bool
+        FcConfigAppFontAddFile.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+
+        if not FcConfigAppFontAddFile(config, path.encode("utf-8")):
+            raise RuntimeError("FcConfigAppFontAddFile failed.")
+
+        FcConfigSetCurrent = fc.FcConfigSetCurrent
+        FcConfigSetCurrent.argtypes = [ctypes.c_void_p]
+        FcConfigSetCurrent(config)
+
+    def override_fonts(
+        self,
+        family: str = "",
+        component_fonts: Dict[str, str] = None,
+        font_files: Optional[Dict[str, str]] = None,
+    ) -> None:
+        """Override the font families used by roadmap components.
+
+        Args:
+            family (str, optional): Font family to apply to all components.
+            component_fonts (dict[str, str], optional): Per-component overrides.
+                                                        Supported keys: title, timeline, marker, group,
+                                                        task, milestone, footer.
+            font_files (dict[str, str], optional): Mapping of font names to TTF file paths.
+        """
+        font_files = font_files or {}
+        if family and family in font_files:
+            self._register_font(family, font_files[family])
+        font_attributes = {
+            "title": "title_font",
+            "timeline": "timeline_font",
+            "marker": "marker_font",
+            "group": "group_font",
+            "task": "task_font",
+            "milestone": "milestone_font",
+            "footer": "footer_font",
+        }
+
+        if family:
+            for attr_name in font_attributes.values():
+                setattr(self, attr_name, family)
+        if component_fonts:
+            for component, font_name in component_fonts.items():
+                attr_name = font_attributes.get(component.lower())
+                if attr_name and font_name:
+                    setattr(self, attr_name, font_name)
+                    if font_name in font_files:
+                        self._register_font(font_name, font_files[font_name])
+
+    def save_surface(self, filename: str) -> None:
+        """Save surface to PNG file
+
+        Args:
+            filename (str): PNG file name
+        """
+        if self.output_type == "PNG":
+            self.__surface.write_to_png(filename)
